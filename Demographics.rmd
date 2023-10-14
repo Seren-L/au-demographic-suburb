@@ -1,0 +1,380 @@
+---
+title: "Regional demographic report - `r params$Area`"
+output: html_document
+params:
+  Area: "Burwood"
+---
+
+```{r setup, include=FALSE, echo=FALSE,results='hide'}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(gridExtra)
+library(paletteer)
+library(reshape2)
+library(scales)
+```
+
+```{r area_code_parser, echo=FALSE,results='hide'}
+df <- read.csv("SAL_2021_AUST.csv")
+code <- paste("SAL", df[df$SAL_NAME_2021 == params$Area, ]$SAL_CODE_2021, sep = "")
+```
+
+```{r general, echo=FALSE}
+df <- read.csv("NSW/2021Census_G01_NSW_SAL.csv")
+population <- df[df$SAL_CODE_2021 == code, ]$Tot_P_P
+```
+
+**Population:** `r population`
+
+## Age
+
+```{r age_count, echo=FALSE}
+df <- read.csv("NSW/2021Census_G04A_NSW_SAL.csv")
+filter <- grep("^Age_yr_([0-9]+)_P$", names(df), value = TRUE)
+df1 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df1)[1] <- code
+df <- read.csv("NSW/2021Census_G04B_NSW_SAL.csv")
+filter <- grep("^Age_yr_([0-9]+)_P$", names(df), value = TRUE)
+df2 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df2)[1] <- code
+df1 <- merge(df1, df2)
+colnames(df1) <- c(0:79)
+df1 <- t(df1)
+colnames(df1)[1] <- "Number"
+df <- data.frame(Age = c(0:79), df1)
+```
+
+```{r age_raw, echo=FALSE}
+age_raw <- df[rep(seq_len(nrow(df)), df$Number), 1:ncol(df)]
+age_raw <- as.data.frame(age_raw$Age)
+colnames(age_raw) <- c("Age")
+```
+
+```{r age_by_group_by_sex, echo=FALSE}
+AGEGROUPS <- c("0-4", "5-14", "15-19", "20-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", "85+")
+df <- read.csv("NSW/2021Census_G01_NSW_SAL.csv")
+filter <- grep("^Age", names(df), value = TRUE)
+df <- df[df$SAL_CODE_2021 == code, filter]
+df_m <- df[grep("^Age_[^p].*M$", names(df), value = TRUE)]
+df_m <- data.frame(df_m)
+colnames(df_m) <- AGEGROUPS
+rownames(df_m)[1] <- "Male"
+df_m <- t(df_m)
+df_m <- data.frame(df_m)
+df_f <- df[grep("^Age_[^p].*F$", names(df), value = TRUE)]
+df_f <- data.frame(df_f)
+colnames(df_f) <- AGEGROUPS
+rownames(df_f)[1] <- "Female"
+df_f <- t(df_f)
+df_f <- data.frame(df_f)
+df_p <- df[grep("^Age_[^p].*P$", names(df), value = TRUE)]
+df_p <- data.frame(df_p)
+colnames(df_p) <- AGEGROUPS
+rownames(df_p)[1] <- "Total"
+df_p <- t(df_p)
+df_p <- data.frame(df_p)
+age_group_sex <- data.frame(
+  Age_group = AGEGROUPS,
+  Male = df_m$Male,
+  Female = df_f$Female,
+  Total = df_p$Total
+)
+age_group_sex$Age_group <- factor(
+  age_group_sex$Age_group,
+  levels = age_group_sex$Age_group
+)
+```
+
+**Mean:** `r mean(age_raw$Age)`
+
+**Median:** `r median(age_raw$Age)`
+
+```{r age_1_year, echo=FALSE,message=FALSE,warning=FALSE}
+p1 <- ggplot(age_raw, aes(Age)) +
+  geom_bar(width = 0.8) +
+  geom_vline(xintercept = mean(age_raw$Age), lwd = 0.7) +
+  geom_text(
+    aes(x = median(Age) + 15, y = Inf),
+    label = paste("Median=", median(age_raw$Age), sep = ""),
+    just = 1.5
+  ) +
+  ylab("count")
+p1
+```
+
+```{r age_group, echo=FALSE}
+age_group <- c(18, 23, 30, 36, 41, 46, 51, 56, 61, 66, 71, 75, 80)
+ggplot(age_raw, aes(x = Age)) +
+  geom_histogram(breaks = age_group, colour = "black") +
+  scale_x_continuous(breaks = age_group)
+```
+
+```{r age_group_sex, echo=FALSE}
+p3 <- ggplot(age_group_sex, aes(x = Age_group, y = Total)) +
+  geom_col(aes(x = Age_group, y = Total, fill = "Female")) +
+  geom_col(aes(x = Age_group, y = Male, fill = "Male")) +
+  labs(x = "Age") +
+  scale_fill_manual(name = "Sex", values = c(Female = "red", Male = "Blue"), breaks = c("Female", "Male"))
+```
+
+## Gender
+
+```{r gender_count, echo=FALSE}
+df <- read.csv("NSW/2021Census_G04B_NSW_SAL.csv")
+filter <- grep("^Tot_", names(df), value = TRUE)
+df2 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df2)[1] <- code
+colnames(df2) <- c("Male", "Female", "Other")
+df2$Other <- df2$Other - df2$Male - df2$Female
+df2 <- t(df2)
+df2 <- data.frame(Gender = c("Male", "Female", "Other"), Number = df2)
+colnames(df2)[2] <- "Number"
+p2 <- ggplot(df2, aes("", Number, fill = Gender)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y", start = 0)
+p2
+```
+
+## Country of Birth
+
+```{r ethnicity_raw,echo=FALSE,message=FALSE}
+# G09F-G09H
+df <- read.csv("NSW/2021Census_G09F_NSW_SAL.csv")
+df <- merge(df, read.csv("NSW/2021Census_G09G_NSW_SAL.csv"))
+df <- merge(df, read.csv("NSW/2021Census_G09H_NSW_SAL.csv"))
+filter <- grep("^P.*Tot$", names(df), value = TRUE)
+df1 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df1)[1] <- code
+cob <- within(df1, rm("P_COB_NS_Tot", "P_Tot_Tot"))
+colnames(cob) <- c(
+  "Afghanistan",
+  "Australia",
+  "Bangladesh",
+  "Bosnia & Herzegovina",
+  "Brazil",
+  "Cambodia",
+  "Canada",
+  "Chile",
+  "China",
+  "Croatia",
+  "Egypt",
+  "England",
+  "Fiji",
+  "France",
+  "Germany",
+  "Greece",
+  "Hong Kong",
+  "India",
+  "Indonesia",
+  "Iran",
+  "Iraq",
+  "Ireland",
+  "Italy",
+  "Japan",
+  "South Korea",
+  "Lebanon",
+  "Malaysia",
+  "Malta",
+  "Mauritius",
+  "Myanmar",
+  "Nepal",
+  "Netherlands",
+  "New Zealand",
+  "North Macedonia",
+  "Pakistan",
+  "Papua New Guinea",
+  "Philippines",
+  "Poland",
+  "Samoa",
+  "Scotland",
+  "Singapore",
+  "South Africa",
+  "Sri Lanka",
+  "Taiwan",
+  "Thailand",
+  "Turkey",
+  "USA",
+  "Vietnam",
+  "Wales",
+  "Zimbabwe"
+)
+cob <- melt(cob)
+colnames(cob) <- c("Country", "Count")
+```
+
+```{r ethnicity,echo=FALSE}
+ggplot(cob, aes(x = reorder(Country, -Count), y = Count)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Country")
+```
+
+## Total personal income (weekly)
+
+```{r income_by_group_raw,echo=FALSE}
+INCOMEGROUPS <- c("15-19", "20-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", "85+")
+
+df <- read.csv("NSW/2021Census_G17B_NSW_SAL.csv")
+filter <- grep("^P_[^T].*[yrs|ov]$", names(df), value = TRUE)
+df2 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df2)[1] <- code
+
+df <- read.csv("NSW/2021Census_G17C_NSW_SAL.csv")
+filter <- grep("^P_[^T].*[yrs|ov]$", names(df), value = TRUE)
+df3 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df3)[1] <- code
+
+df <- merge(df2, df3)
+
+filter <- grep(".*15_19.*", names(df), value = TRUE)
+df1 <- df[filter]
+df1 <- data.frame(df1)
+rownames(df1)[1] <- "15-19"
+
+filter <- grep(".*20_24.*", names(df), value = TRUE)
+df2 <- df[filter]
+df2 <- data.frame(df2)
+rownames(df2)[1] <- "20-24"
+
+filter <- grep(".*25_34.*", names(df), value = TRUE)
+df3 <- df[filter]
+df3 <- data.frame(df3)
+rownames(df3)[1] <- "25-34"
+
+filter <- grep(".*35_44.*", names(df), value = TRUE)
+df4 <- df[filter]
+df4 <- data.frame(df4)
+rownames(df4)[1] <- "35-44"
+
+filter <- grep(".*45_54.*", names(df), value = TRUE)
+df5 <- df[filter]
+df5 <- data.frame(df5)
+rownames(df5)[1] <- "45-54"
+
+filter <- grep(".*55_64.*", names(df), value = TRUE)
+df6 <- df[filter]
+df6 <- data.frame(df6)
+rownames(df6)[1] <- "55-64"
+
+filter <- grep(".*65_74.*", names(df), value = TRUE)
+df7 <- df[filter]
+df7 <- data.frame(df7)
+rownames(df7)[1] <- "65-74"
+
+filter <- grep(".*75_84.*", names(df), value = TRUE)
+df8 <- df[filter]
+df8 <- data.frame(df8)
+rownames(df8)[1] <- "75-84"
+
+filter <- grep(".*85.*", names(df), value = TRUE)
+df9 <- df[filter]
+df9 <- data.frame(df9)
+rownames(df9)[1] <- "85+"
+
+colname <- c("Nil", "1-149", "150-299", "300-399", "400-499", "500-649", "650-799", "800-999", "1000-1249", "1250-1499", "1500-1749", "1750-1999", "2000-2999", "3000-3499", "3500+", "INS")
+
+colnames(df1) <- colname
+colnames(df2) <- colname
+colnames(df3) <- colname
+colnames(df4) <- colname
+colnames(df5) <- colname
+colnames(df6) <- colname
+colnames(df7) <- colname
+colnames(df8) <- colname
+colnames(df9) <- colname
+
+income <- rbind(df1, df2, df3, df4, df5, df6, df7, df8, df9)
+
+income <- within(income, rm("INS"))
+
+income$Age <- row.names(income)
+
+income <- melt(income, id = "Age")
+```
+
+```{r income_by_age, echo=FALSE}
+p <- ggplot(income, aes(x = Age, y = value, fill = variable)) +
+  geom_col(position = position_fill(reverse = TRUE), colour = "black") +
+  geom_hline(yintercept = 0.5, col = "white", lwd = 0.7) +
+  labs(x = "Age", y = "Percentage", fill = "Income") +
+  guides(fill = guide_legend(reverse = TRUE))
+p
+```
+
+```{r income_by_income_group, echo=FALSE}
+ggplot(income) +
+  geom_col(aes(x = variable, y = value)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  xlab("Total personal income (weekly)") +
+  ylab("count")
+```
+
+```{r income_stacked, echo=FALSE}
+ggplot(income, aes(x = Age, y = value, fill = variable)) +
+  geom_col(position = position_stack(reverse = TRUE), colour = "white") +
+  labs(x = "Age", y = "Count", fill = "Income") +
+  guides(fill = guide_legend(reverse = TRUE))
+```
+
+## Occupation/Industry
+
+```{r employment_raw,echo=FALSE,message=FALSE}
+df <- read.csv("NSW/2021Census_G46B_NSW_SAL.csv")
+filter <- grep("^P.*Tot$", names(df), value = TRUE)
+df1 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df1)[1] <- code
+employment <- data.frame(Employed = df1$P_Tot_LF_Tot, Unemployed = df1$P_Not_in_LF_Tot, Not_stated = df1$P_LFS_NS_Tot)
+employment <- melt(employment)
+colnames(employment) <- c("Employment", "Count")
+employment_rate <- employment[1, 2] / sum(employment$Count)
+```
+
+Employment rate: `r percent(employment_rate)`
+
+```{r employment,echo=FALSE}
+p <- ggplot(employment, aes(x = "", y = Count, fill = Employment)) +
+  geom_col() +
+  coord_polar("y", start = 0) +
+  labs(x = "", y = "") +
+  scale_fill_paletteer_d("pals::glasbey")
+```
+
+```{r occupation_raw,echo=FALSE,message=FALSE}
+df <- read.csv("NSW/2021Census_G60B_NSW_SAL.csv")
+filter <- grep("^P_Tot_", names(df), value = TRUE)
+df1 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df1)[1] <- code
+occupation <- within(df1, rm("P_Tot_Occu_ID_NS", "P_Tot_Tot"))
+colnames(occupation) <- c("Managers", "Professionals", "Technicians and trades workders", "Community and personal service workers", "Clerical and administrative workers", "Sales workers", "Machinery operators and drivers", "Labourers")
+occupation <- melt(occupation)
+colnames(occupation) <- c("Occupation", "Count")
+```
+
+```{r occupation,echo=FALSE}
+ggplot(occupation, aes(x = "", y = Count, fill = Occupation)) +
+  geom_col() +
+  coord_polar("y", start = 0) +
+  labs(x = "", y = "") +
+  scale_fill_paletteer_d("pals::glasbey")
+```
+
+```{r industry_raw,echo=FALSE,message=FALSE}
+df <- read.csv("NSW/2021Census_G54C_NSW_SAL.csv")
+df1 <- read.csv("NSW/2021Census_G54D_NSW_SAL.csv")
+df <- merge(df, df1)
+filter <- grep("^P.*Tot$", names(df), value = TRUE)
+df1 <- df[df$SAL_CODE_2021 == code, filter]
+rownames(df1)[1] <- code
+df1 <- within(df1, rm("P_ID_NS_Tot", "P_Tot_Tot"))
+colnames(df1) <- c("Agriculture, Forestry and Fishing", "Mining", "Manufacturing", "Electricity, Gas, Water and Waste Services", "Construction", "Wholesale Trade", "Retail Trade", "Accommodation and Food Services", "Transport, Postal and Warehousing", "Information, Media and Telecommunications", "Financial and Insurance", "Rental, Hiring and Real Estate Services", "Professional, Scientific and Techinical Services", "Administrative and Support Services", "Public Administration and Safety", "Education and Training", "Health Care and Social Assistance", "Arts and Recreation Services", "Other Services")
+industry <- melt(df1)
+colnames(industry) <- c("Industry", "Count")
+```
+
+```{r industry,echo=FALSE}
+
+ggplot(industry, aes(x = reorder(Industry, -Count), y = Count)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Industry")
+```

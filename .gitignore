@@ -47,3 +47,9 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Project specific exclusions
+NSW
+Demographics.html
+R-portable
+pandoc-3.1.8
